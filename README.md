@@ -3,15 +3,18 @@ VirusTotal File Scanner CLI Tool
 
 # usage
 ````
-usage: vtscan [-h] [--verbose] [--links] file
+usage: vtscan [-h] [--verbose] [--links] [--browser BROWSER] file
 
 positional arguments:
-  file           File to scan
+  file                  File to scan
 
 optional arguments:
-  -h, --help     show this help message and exit
+  -h, --help            show this help message and exit
   --verbose, -v
   --links, -L
+  --browser BROWSER, -b BROWSER
+                        Browser to launch for Virus Total Info or other
+                        searches
   ````
 
 # Sample output
