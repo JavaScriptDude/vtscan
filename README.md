@@ -1,7 +1,13 @@
 # vtscan
 VirusTotal File Scanner CLI Tool
 
-# usage
+# Virus Total API Key
+This tool requires that you first get a API Key from Virus Total:
+1. Create a free account on [VirusTotal](https://www.virustotal.com/gui/join-us)
+2. Once verified, log in -> Click on avatar on top right -> API Key
+3. Set the API key to an environment variable called VT_API_KEY
+
+# Usage
 ````
 usage: vtscan [-h] [--verbose] [--links] [--browser BROWSER] file
 
