@@ -40,3 +40,6 @@ optional arguments:
 - Detections: 0 out of 71 (100% pass)
 ~
 ````
+
+# Alternatives
+1. Virus Total official [cli utility](https://github.com/VirusTotal/vt-cli)
