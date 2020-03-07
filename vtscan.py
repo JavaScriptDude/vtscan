@@ -9,7 +9,7 @@ from __future__ import print_function
 # -or-
 # python3 vtscan.py <path_to_file>
 # .: deployment :.
-# # put vtscan.py in a folder on your machine
+# # put vtscan.py in a folder on your computer by hand or using git
 # % alias vtscan="python3 <path_to_vtscan_folder>/vtscan.py"
 # .: Other :.
 # Author: Timothy C. Quinn
@@ -19,7 +19,7 @@ from __future__ import print_function
 # (none)
 #########################################
 
-import os, sys, json, hashlib, traceback, pathlib, argparse
+import os, sys, json, hashlib, traceback, pathlib, argparse, subprocess, shutil
 from virus_total_apis import PublicApi as VirusTotalPublicApi
 
 
@@ -28,6 +28,7 @@ def main():
     argp = argparse.ArgumentParser(prog="vtscan")
     argp.add_argument("--verbose", "-v", action='store_true')
     argp.add_argument("--links", "-L", action='store_true')
+    argp.add_argument("--browser", "-b", type=str, help="Browser to launch for Virus Total Info or other searches")
     argp.add_argument("file", type=str, help="File to scan")
 
     args = argp.parse_args()
@@ -71,12 +72,13 @@ def main():
 
     if len(warnings) == 0: # Dig into the results...
         res = response['results']
+
         if not res['response_code'] == 1:
-            dump_response = True
-            if res['resource'] == '87b566abab9888ff362058f90818f8dae6cf3e2a67de645e446a2999983a91a2':
+            if res['verbose_msg'] == 'The requested resource is not among the finished, queued or pending scans':
                 warnings.append("File not found in VirusTotal database. Therefore its safety is unknown.")
-                warnings.append("Check if the download source has checksums to verify or Try googling one or all the checksums.")
+                warnings.append("Alternate verifications may be required")
             else:
+                dump_response = True
                 warnings.append("Bad result response_code from virus total: {}")
 
         # print("Raw virus total results: {}".format(json.dumps(res, sort_keys=False, indent=4)), 1)
@@ -97,6 +99,7 @@ def main():
     if dump_response or args.verbose:
         print(".: Raw Virus Total Response :.\n" + json.dumps(response, sort_keys=False, indent=4) + "\n~\n")
 
+
     print("""
 .: Details :.
 - md5: {0}
@@ -106,18 +109,19 @@ def main():
     if got_results:
         print("- Permalink: " + res['permalink'])
 
-    if args.links or not got_results or result_issues > 0:
-        print("""
-.: Search Links for hand testing :.
-- Google MD5: https://www.google.com/search?q=%22{0}%22
-- Google SHA1: https://www.google.com/search?q=%22{1}%22
-- Bing MD5: https://www.bing.com/search?q=%22{0}%22
-- Bing SHA1: https://www.bing.com/search?q=%22{1}%22""".format(digest_md5,digest_sha1))
+    search_urls:list = []
+    search_urls.append("https://www.google.com/search?q=%22" + digest_md5 + "%22")
+    search_urls.append("https://www.google.com/search?q=%22" + digest_sha1 + "%22")
+    search_urls.append("https://www.bing.com/search?q=%22" + digest_md5 + "%22")
+    search_urls.append("https://www.bing.com/search?q=%22" + digest_sha1 + "%22")
 
-    print("""
-.: File :.
-- File: {0}
-- Path: {1}""".format(fname, fpath) )
+    if args.links or not got_results or result_issues > 0:
+        print("\n.: Search Links for hand testing :.")
+        for url in search_urls:
+            print(" - " + url)
+
+
+    print("\n.: File :.\n- File: {0}\n- Path: {1}".format(fname, fpath) )
 
 
     if got_results:
@@ -127,13 +131,39 @@ def main():
         else:
             print("- Detections: {} out of {} (Go to VirusTotal for more details)".format(result_issues, res['total']))
 
-    
-
 
     if len(warnings) > 0:
-        print(".: Warnings :.")
+        print("\n.: Warnings :.")
         for i, warning in enumerate(warnings):
-            print(" {}) {}".format(i, warning))
+            print("{}) {}".format(i, warning))
+
+    
+
+    if args.browser:
+        exe = shutil.which(args.browser)
+        if exe is None:
+            print("\n  Note: Browser not launched executable not found: " + args.browser)
+        else:
+            if not got_results:
+                urls = search_urls
+                print("""
+  Signature not found in Virus Total so will search in google
+  and bing for hash signatures. If no results are found,
+  it is strongly recommended to take care with this file.""")
+            else:
+                print("\n  Note: Launching Virus Total in " + args.browser)
+                urls = [res['permalink']]
+
+            for url in urls:
+                cmd = [exe, url]
+                subprocess.Popen(cmd, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
+
+    if not got_results:
+                print("""
+  If this is an installer, executable, or other file that does not contain
+  personal information (for example not a zip archive of personal files),
+  you may want to consider uploading to VirusTotal to do a deep scan at:
+ - https://www.virustotal.com/gui/home/upload""")
 
     print("~")
 
@@ -170,6 +200,7 @@ def splitPath(s):
     p = s[:-(len(f))-1]
     p = toPosixPath(getAbsPath(p))
     return f, p
+
 
 def toPosixPath(s:str, strip_slash:bool=False, ensure_slash:bool=False):
     s = s.strip().replace('\\', '/')
