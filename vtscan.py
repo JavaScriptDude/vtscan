@@ -2,6 +2,8 @@ from __future__ import print_function
 #########################################
 # .: vtscan :.
 # Verifies a file using VirusTotal API
+# .: dependencies :.
+# python3 -m pip install virustotal-api
 # .: Sample :.
 # export VT_API_KEY=<virus_total_api_key>
 # .: usage :.
@@ -33,7 +35,7 @@ def main():
 
     args = argp.parse_args()
 
-    dump_response : bool = False
+    api_call_failed : bool = False
     got_results : bool = False
     result_issues : int = -1
     warnings : list = []
@@ -61,16 +63,29 @@ def main():
     digest_sha1 = getChecksum(args.file, 'sha1')
     digest_sha256 = getChecksum(args.file, 'sha256')
 
+    # print("digest_sha256 = " + digest_sha256)
+
     vt = VirusTotalPublicApi(API_KEY)
 
     response = vt.get_file_report(digest_sha256)
 
-    if not response['response_code'] == 200:
-        dump_response = True
-        warnings.append("Bad general response_code from Virus Total")
 
+    if 'response_code' in response:
+        print("!!response_code in response")
 
-    if len(warnings) == 0: # Dig into the results...
+    if not 'response_code' in response:
+        api_call_failed = True
+        warnings.append("Call to Virus Total API Failed")                    
+        if 'error' in response:
+            err_msg = response['error']
+            if err_msg.find("Max retries exceeded with url") > -1:
+                warnings.append("Please check your network connection")                    
+
+    elif not response['response_code'] == 200:
+        api_call_failed = True
+        warnings.append("Bad general response_code from Virus Total")                    
+
+    if not api_call_failed: # Dig into the results...
         res = response['results']
 
         if not res['response_code'] == 1:
@@ -78,7 +93,7 @@ def main():
                 warnings.append("File not found in VirusTotal database. Therefore its safety is unknown.")
                 warnings.append("Alternate verifications may be required")
             else:
-                dump_response = True
+                api_call_failed = True
                 warnings.append("Bad result response_code from virus total: {}")
 
         # print("Raw virus total results: {}".format(json.dumps(res, sort_keys=False, indent=4)), 1)
@@ -96,8 +111,8 @@ def main():
             result_issues = res['positives']
 
 
-    if dump_response or args.verbose:
-        print(".: Raw Virus Total Response :.\n" + json.dumps(response, sort_keys=False, indent=4) + "\n~\n")
+    if api_call_failed or args.verbose:
+        print(".: Raw Virus Total Response :.\n" + json.dumps(response, sort_keys=False, indent=4) + "\n")
 
 
     print("""
@@ -134,12 +149,12 @@ def main():
 
     if len(warnings) > 0:
         print("\n.: Warnings :.")
-        for i, warning in enumerate(warnings):
-            print("{}) {}".format(i, warning))
+        for warning in warnings:
+            print("- {}".format(warning))
 
     
 
-    if args.browser:
+    if not api_call_failed and args.browser:
         exe = shutil.which(args.browser)
         if exe is None:
             print("\n  Note: Browser not launched executable not found: " + args.browser)
@@ -158,14 +173,13 @@ def main():
                 cmd = [exe, url]
                 subprocess.Popen(cmd, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
 
-    if not got_results:
+    if not api_call_failed and not got_results:
                 print("""
   If this is an installer, executable, or other file that does not contain
   personal information (for example not a zip archive of personal files),
   you may want to consider uploading to VirusTotal to do a deep scan at:
  - https://www.virustotal.com/gui/home/upload""")
 
-    print("~")
 
 
 
