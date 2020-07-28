@@ -8,7 +8,7 @@ This tool requires that you first get a API Key from Virus Total:
 3. Set the API key to an environment variable called VT_API_KEY
 # Installation
 ````
-% pip3 install virustotal-api
+% python3 -m pip install virustotal-api
 ````
 # Usage
 ````
