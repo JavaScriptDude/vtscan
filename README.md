@@ -6,11 +6,15 @@ This tool requires that you first get a API Key from Virus Total:
 1. Create a free account on [VirusTotal](https://www.virustotal.com/gui/join-us)
 2. Once verified, log in -> Click on avatar on top right -> API Key
 3. Set the API key to an environment variable called VT_API_KEY
-# Installation
+
+### Requiremnts
+Python 3.7+
+
+### Install Dependencies
 ````
-% python3 -m pip install virustotal-api
+% python3 -m pip install -r requirements.txt
 ````
-# Usage
+### Usage
 ````
 usage: vtscan [-h] [--verbose] [--links] [--browser BROWSER] file
 
@@ -26,7 +30,7 @@ optional arguments:
                         searches
   ````
 
-# Sample output
+### Sample output
 ````
 % python3 /dpool/vcmain/dev/py/vtscan/vtscan.py /tmp/nc.exe
 .: Details :.
