@@ -85,9 +85,6 @@ def main():
     response = vt.get_file_report(digest_sha256)
 
 
-    if 'response_code' in response:
-        print("!!response_code in response")
-
     if not 'response_code' in response:
         api_call_failed = True
         warnings.append("Call to Virus Total API Failed")                    
@@ -99,6 +96,7 @@ def main():
     elif not response['response_code'] == 200:
         api_call_failed = True
         warnings.append("Bad general response_code from Virus Total")                    
+
 
     if not api_call_failed: # Dig into the results...
         res = response['results']
@@ -239,7 +237,7 @@ def main():
         _setText("txtSha1", digest_sha1)
         _setText("txtSha256", digest_sha256)
         if got_results:
-            _setText("txtLink", f"<a href='{res['permalink']}''>VirusTotal.com</a>")
+            _setText("txtLink", f"""<a href="{res['permalink']}">VirusTotal.com</a>""")
             _setText("txtRes", digest_sha256)
             if result_issues == 0:
                 _setText("txtRes", "Detections: 0 out of {} (100% pass)".format(res['total']))
