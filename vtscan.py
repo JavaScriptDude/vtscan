@@ -22,13 +22,19 @@ from __future__ import print_function
 # [.] Add CLI Arg for GUI
 #########################################
 
-import os, sys, json, hashlib, traceback, pathlib, argparse, subprocess, shutil, qrcode
+import os, sys, json, hashlib, traceback, pathlib, argparse, subprocess, shutil, qrcode, tempfile
 
 
 from virus_total_apis import PublicApi as VirusTotalPublicApi
 from PySide2.QtCore import QObject
 from PySide2.QtQml import QQmlApplicationEngine
 from PySide2.QtWidgets import QApplication
+
+
+
+
+
+
 
 def main():
     argp = argparse.ArgumentParser(prog="vtscan")
@@ -44,6 +50,10 @@ def main():
     got_results : bool = False
     result_issues : int = -1
     warnings : list = []
+
+    _qr_png_path = None
+    _script_name, _script_path = splitPath(os.path.realpath(__file__))
+    _is_windows = hasattr(sys, 'getwindowsversion')
 
     # Check for Api key
     if "VT_API_KEY" not in os.environ:
@@ -133,9 +143,23 @@ def main():
             # Encoding data using make() function
             img = qrcode.make(res['permalink'])
             
+            # Get Temp dir (windows only)
+            _tmp_dir = None
+            if _is_windows:
+                if 'TEMP' not in os.environ:
+                    raise Exception("TEMP Variable does not exist in users environment! cannot continue.")
+                
+                _tmp_dir = API_KEY=os.environ["TEMP"]
+                if not os.path.isdir(_tmp_dir): 
+                    raise Exception(f"TEMP dir does not exist: {_tmp_dir}")
+
+            # Create Temp File name
+            _tf = tempfile.NamedTemporaryFile(suffix='.png', prefix='_qrcode_', dir=_tmp_dir)
+            _qr_png_path = _tf.name
+            _tf.close()
+
             # Saving as an image file
-            # TODO - Save as tempfile
-            img.save('/tmp/_QRCode.png')
+            img.save(_qr_png_path)
 
 
     print("\n.: File :.\n- File: {0}\n- Path: {1}".format(fname, fpath) )
@@ -162,7 +186,6 @@ def main():
             print("\n  Note: Browser not launched executable not found: " + args.browser)
         else:
             if not got_results:
-                urls = search_urls
                 print("""
   Signature not found in Virus Total so will search in google
   and bing for hash signatures. If no results are found,
@@ -194,7 +217,7 @@ def main():
         }
         engine.rootContext().setContextProperty("C", _constants)
         qml = None
-        with open('/dpool/vcmain/dev/py/vtscan/vtscan.qml') as f:
+        with open(f'{_script_path}/vtscan.qml') as f:
             lines = [ line.strip('\n') for line in list(f) ]
             qml = str.encode('\n'.join(lines))
 
@@ -227,9 +250,13 @@ def main():
             _setText("txtRes", "Not Registered in VirusTotal")
 
         o = win.findChild(QObject, "qrcode")
-        o.setProperty('source', 'file:///tmp/_QRCode.png')
+        _qr_png_path_c = _qr_png_path.replace('\\', '/').replace(':', '::') if _is_windows else _qr_png_path
         
-
+        o.setProperty('source', f'file://{_qr_png_path_c}')
+        
+        
+        
+        #file:///C:/Users/Administrator/Downloads/ndp48-devpack-enu.exe
 
         app.exec_()
 
@@ -280,9 +307,6 @@ def toPosixPath(s:str, strip_slash:bool=False, ensure_slash:bool=False):
 
 def getAbsPath(s:str):
     return os.path.abspath( pathlib.Path(s).expanduser() )
-
-
-
 
 if __name__ == '__main__':
     iExit = 0
