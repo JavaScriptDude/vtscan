@@ -2,8 +2,8 @@ from __future__ import print_function
 #########################################
 # .: vtscan :.
 # Verifies a file using VirusTotal API
-# .: dependencies :.
-# python3 -m pip install virustotal-api
+# .: install dependencies :.
+# python3 -m pip install -r requirements.txt
 # .: Sample :.
 # export VT_API_KEY=<virus_total_api_key>
 # .: usage :.
@@ -21,14 +21,18 @@ from __future__ import print_function
 # (none)
 #########################################
 
-import os, sys, json, hashlib, traceback, pathlib, argparse, subprocess, shutil
-from virus_total_apis import PublicApi as VirusTotalPublicApi
+import os, sys, json, hashlib, traceback, pathlib, argparse, subprocess, shutil, qrcode
 
+
+from virus_total_apis import PublicApi as VirusTotalPublicApi
+from PySide2.QtCore import QObject
+from PySide2.QtQml import QQmlApplicationEngine
+from PySide2.QtWidgets import QApplication
 
 def main():
-
     argp = argparse.ArgumentParser(prog="vtscan")
     argp.add_argument("--verbose", "-v", action='store_true')
+    argp.add_argument("--nogui", "-n", action='store_true')
     argp.add_argument("--links", "-L", action='store_true')
     argp.add_argument("--browser", "-b", type=str, help="Browser to launch for Virus Total Info or other searches")
     argp.add_argument("file", type=str, help="File to scan")
@@ -124,16 +128,13 @@ def main():
     if got_results:
         print("- Permalink: " + res['permalink'])
 
-    search_urls:list = []
-    search_urls.append("https://www.google.com/search?q=%22" + digest_md5 + "%22")
-    search_urls.append("https://www.google.com/search?q=%22" + digest_sha1 + "%22")
-    search_urls.append("https://www.bing.com/search?q=%22" + digest_md5 + "%22")
-    search_urls.append("https://www.bing.com/search?q=%22" + digest_sha1 + "%22")
-
-    if args.links or not got_results or result_issues > 0:
-        print("\n.: Search Links for hand testing :.")
-        for url in search_urls:
-            print(" - " + url)
+        if not args.nogui:
+            # Encoding data using make() function
+            img = qrcode.make(res['permalink'])
+            
+            # Saving as an image file
+            # TODO - Save as tempfile
+            img.save('/tmp/_QRCode.png')
 
 
     print("\n.: File :.\n- File: {0}\n- Path: {1}".format(fname, fpath) )
@@ -179,6 +180,57 @@ def main():
   personal information (for example not a zip archive of personal files),
   you may want to consider uploading to VirusTotal to do a deep scan at:
  - https://www.virustotal.com/gui/home/upload""")
+
+
+    if not args.nogui:
+        app = QApplication([])
+        engine = QQmlApplicationEngine()
+
+        _constants = {
+            'Labels': {
+                'Indent': 140
+            }
+        }
+        engine.rootContext().setContextProperty("C", _constants)
+        qml = None
+        with open('/dpool/vcmain/dev/py/vtscan/vtscan.qml') as f:
+            lines = [ line.strip('\n') for line in list(f) ]
+            qml = str.encode('\n'.join(lines))
+
+        
+        engine.loadData(qml)
+        root_obj = engine.rootObjects()
+        if not len(root_obj) == 1:
+            raise Exception("Issue Parsing QML. Exiting Program")
+        win = root_obj[0]
+
+        def _setText(name, value):
+            o = win.findChild(QObject, name)
+            o.setProperty("text", value)
+
+
+        _setText("txtFile", fname)
+        _setText("txtPath", fpath)
+        _setText("txtMd5", digest_md5)
+        _setText("txtSha1", digest_sha1)
+        _setText("txtSha256", digest_sha256)
+        if got_results:
+            _setText("txtLink", f"<a href='{res['permalink']}''>VirusTotal.com</a>")
+            _setText("txtRes", digest_sha256)
+            if result_issues == 0:
+                _setText("txtRes", "Detections: 0 out of {} (100% pass)".format(res['total']))
+            else:
+                _setText("txtRes", "Detections: {} out of {} (Go to VirusTotal for more details)".format(result_issues, res['total']))
+        else:
+            _setText("txtLink", 'n/a')
+            _setText("txtRes", "Not Registered in VirusTotal")
+
+        o = win.findChild(QObject, "qrcode")
+        o.setProperty('source', 'file:///tmp/_QRCode.png')
+        
+
+
+        app.exec_()
 
 
 
@@ -227,6 +279,8 @@ def toPosixPath(s:str, strip_slash:bool=False, ensure_slash:bool=False):
 
 def getAbsPath(s:str):
     return os.path.abspath( pathlib.Path(s).expanduser() )
+
+
 
 
 if __name__ == '__main__':
