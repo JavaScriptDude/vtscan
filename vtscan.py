@@ -22,9 +22,7 @@ from __future__ import print_function
 # [.] Add CLI Arg for GUI
 #########################################
 
-import os, sys, json, hashlib, traceback, pathlib, argparse, subprocess, shutil, qrcode, tempfile
-
-
+import os, sys, json, hashlib, traceback, pathlib, argparse, subprocess, shutil, qrcode, tempfile, webbrowser, pyperclip, time
 from virus_total_apis import PublicApi as VirusTotalPublicApi
 from PySide2.QtCore import QObject
 from PySide2.QtQml import QQmlApplicationEngine
@@ -33,7 +31,7 @@ from PySide2.QtWidgets import QApplication
 
 
 
-
+_is_windows = hasattr(sys, 'getwindowsversion')
 
 
 def main():
@@ -51,9 +49,13 @@ def main():
     result_issues : int = -1
     warnings : list = []
 
-    _qr_png_path = None
     _script_name, _script_path = splitPath(os.path.realpath(__file__))
-    _is_windows = hasattr(sys, 'getwindowsversion')
+
+    _qr_png_path = None
+    
+
+    
+    
 
     # Check for Api key
     if "VT_API_KEY" not in os.environ:
@@ -205,58 +207,110 @@ def main():
 
 
     if not args.nogui:
-        app = QApplication([])
-        engine = QQmlApplicationEngine()
+        vtdata = VTData()
+        vtdata.fname = fname
+        vtdata.fpath = fpath
+        vtdata.digest_md5 = digest_md5
+        vtdata.digest_sha1 = digest_sha1
+        vtdata.digest_sha256 = digest_sha256
+        vtdata.got_results = got_results
+        vtdata.result_issues = result_issues
+        vtdata.qr_png_path = _qr_png_path
+        vtdata.permalink = res['permalink'] if res and 'permalink' in res else '-'
+        vtdata.total = res['total'] if res and 'total' in res else '-'
+        vtdata.script_path = _script_path
+        
+        app = MyQtApp(vtdata)
+        app.start()
+        
+
+class VTData():
+    def __init__(self):
+        pass
+
+
+class MyQtApp():
+
+    def __init__(self, vtdata:VTData):
+        self._vtdata = vtdata
+        self._app = QApplication([])
+        self._engine = QQmlApplicationEngine()
+
+        
 
         _constants = {
             'Labels': {
                 'Indent': 140
             }
         }
-        engine.rootContext().setContextProperty("C", _constants)
+        self._engine.rootContext().setContextProperty("C", _constants)
         qml = None
-        with open(f'{_script_path}/vtscan.qml') as f:
+        with open(f'{vtdata.script_path}/vtscan.qml') as f:
             lines = [ line.strip('\n') for line in list(f) ]
             qml = str.encode('\n'.join(lines))
 
         
-        engine.loadData(qml)
-        root_obj = engine.rootObjects()
+        self._engine.loadData(qml)
+        root_obj = self._engine.rootObjects()
         if not len(root_obj) == 1:
             raise Exception("Issue Parsing QML. Exiting Program")
-        win = root_obj[0]
+        self._win = root_obj[0]
 
-        def _setText(name, value):
-            o = win.findChild(QObject, name)
+     
+
+
+        self.setText("txtFile", vtdata.fname)
+        self.setText("txtPath", vtdata.fpath)
+        self.setText("txtMd5", vtdata.digest_md5)
+        self.setText("txtSha1", vtdata.digest_sha1)
+        self.setText("txtSha256", vtdata.digest_sha256)
+        if vtdata.got_results:
+            self.setText("txtLink", f"""<a href="{vtdata.permalink}">VirusTotal.com</a>""")
+            self.setText("txtRes", vtdata.digest_sha256)
+            if vtdata.result_issues == 0:
+                self.setText("txtRes", "Detections: 0 out of {} (100% pass)".format(vtdata.total))
+            else:
+                self.setText("txtRes", "Detections: {} out of {} (Go to VirusTotal for more details)".format(vtdata.result_issues, vtdata.total))
+
+            o = self._win.findChild(QObject, "qrcode")
+            _qr_png_path_c = vtdata.qr_png_path.replace('\\', '/').replace(':', '::') if _is_windows else vtdata.qr_png_path
+            
+            o.setProperty('source', f'file://{_qr_png_path_c}')
+
+            # Link signal in qml to python event
+            self._win.maTxtLink_click.connect(self.maTxtLink_click)
+
+
+            # self._maTxtLink = self._win.findChild(QObject, 'maTxtLink')
+            # self._maTxtLink.clicked.connect(self.maTxtLink_click)
+            # self._maTxtLink.pressed.connect(self.maTxtLink_pressed)
+
+        else:
+            self.setText("txtLink", 'n/a')
+            self.setText("txtRes", "Not Registered in VirusTotal")
+
+
+    def start(self):
+        self._app.exec_()
+
+    def setText(self, name, value):
+            o = self._win.findChild(QObject, name)
             o.setProperty("text", value)
 
-
-        _setText("txtFile", fname)
-        _setText("txtPath", fpath)
-        _setText("txtMd5", digest_md5)
-        _setText("txtSha1", digest_sha1)
-        _setText("txtSha256", digest_sha256)
-        if got_results:
-            _setText("txtLink", f"""<a href="{res['permalink']}">VirusTotal.com</a>""")
-            _setText("txtRes", digest_sha256)
-            if result_issues == 0:
-                _setText("txtRes", "Detections: 0 out of {} (100% pass)".format(res['total']))
-            else:
-                _setText("txtRes", "Detections: {} out of {} (Go to VirusTotal for more details)".format(result_issues, res['total']))
+    def maTxtLink_click(self, right_click):
+        if right_click:
+            self.setText('txtStatusBar', "Permalink copied to clipboard")
+            pyperclip.copy(self._vtdata.permalink)
         else:
-            _setText("txtLink", 'n/a')
-            _setText("txtRes", "Not Registered in VirusTotal")
+            webbrowser.open(self._vtdata.permalink)
 
-        o = win.findChild(QObject, "qrcode")
-        _qr_png_path_c = _qr_png_path.replace('\\', '/').replace(':', '::') if _is_windows else _qr_png_path
-        
-        o.setProperty('source', f'file://{_qr_png_path_c}')
-        
-        
-        
-        #file:///C:/Users/Administrator/Downloads/ndp48-devpack-enu.exe
 
-        app.exec_()
+    def maTxtLink_pressed(self):
+        print("HERE")
+
+
+def Foobar():
+    print("HERE")
 
 
 

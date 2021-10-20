@@ -2,3 +2,4 @@ virustotal-api
 qrcode
 PySide2
 Image
+pyperclip
