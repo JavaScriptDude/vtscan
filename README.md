@@ -45,5 +45,9 @@ optional arguments:
 ~
 ````
 
+### *New GUI
+![VTScan GUI](https://raw.githubusercontent.com/JavaScriptDude/vtscan/master/VTScan_GUI.png)
+
+
 # Alternatives
 1. Virus Total official [cli utility](https://github.com/VirusTotal/vt-cli)
