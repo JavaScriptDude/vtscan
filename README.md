@@ -45,8 +45,10 @@ optional arguments:
 ~
 ````
 
-### *New GUI
+### VTScan GUI (new)
 ![VTScan GUI](https://raw.githubusercontent.com/JavaScriptDude/vtscan/master/VTScan_GUI.png)
+
+By Scanning the QR Code on a mobile device, do a side channel validation to VirusTotal enabling you to bypass potential MITM attacks on VirusTotal data on the target machine's network.
 
 
 # Alternatives
