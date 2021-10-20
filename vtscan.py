@@ -18,7 +18,8 @@ from __future__ import print_function
 # Home: https://github.com/JavaScriptDude/vtscan
 # Licence: https://opensource.org/licenses/MIT
 # .: Todo :.
-# (none)
+# [.] Get Hyperlink working
+# [.] Add CLI Arg for GUI
 #########################################
 
 import os, sys, json, hashlib, traceback, pathlib, argparse, subprocess, shutil, qrcode
