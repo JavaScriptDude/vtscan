@@ -1,5 +1,2 @@
-virustotal-api
-qrcode
-PySide2
-Image
+vt-py
 pyperclip

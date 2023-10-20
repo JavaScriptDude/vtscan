@@ -4,12 +4,15 @@ from __future__ import print_function
 # Verifies a file using VirusTotal API
 # .: install dependencies :.
 # python3 -m pip install -r requirements.txt
+# # for GUI support also run:
+# python3 -m pip install -r requirements_gui.txt
+
 # .: Sample :.
 # export VT_API_KEY=<virus_total_api_key>
-# .: usage :.
 # vtscan <path_to_file>
 # -or-
 # python3 vtscan.py <path_to_file>
+
 # .: deployment :.
 # # put vtscan.py in a folder on your computer by hand or using git
 # % alias vtscan="python3 <path_to_vtscan_folder>/vtscan.py"
@@ -18,43 +21,83 @@ from __future__ import print_function
 # Home: https://github.com/JavaScriptDude/vtscan
 # Licence: https://opensource.org/licenses/MIT
 # .: Todo :.
-# [.] Get Hyperlink working
-# [.] Add CLI Arg for GUI
+# [.] Migrate GUI to PySide6
+# [.] Add new fields to GUI
+# [.] Get Hyperlink working in GUI
 #########################################
+import os
+import sys
+import json
+import hashlib
+import traceback
+import pathlib
+import argparse
+import subprocess
+import shutil
+import tempfile
+import webbrowser
+import pyperclip
+import vt
+from importlib.util import find_spec as import_find_spec
 
-import os, sys, json, hashlib, traceback, pathlib, argparse, subprocess, shutil, qrcode, tempfile, webbrowser, pyperclip, time
-from virus_total_apis import PublicApi as VirusTotalPublicApi
-from PySide2.QtCore import QObject
-from PySide2.QtQml import QQmlApplicationEngine
-from PySide2.QtWidgets import QApplication
 
+# QT Dynamic Imports (on demand)
+def assertModInstalled(mod_name):
+    if import_find_spec(mod_name) is None:
+        raise Exception(f"Module {mod_name} is not installed. Please use pip to install.")
 
+QObject = QQmlApplicationEngine = QApplication = qrcode = None
+def ensure_QT():
+    global QObject, QQmlApplicationEngine, QApplication, qrcode
+    if QObject is None:
+        assertModInstalled('PySide2')
+        assertModInstalled('qrcode')
+        from PySide2.QtCore import QObject
+        from PySide2.QtQml import QQmlApplicationEngine
+        from PySide2.QtWidgets import QApplication
+        import qrcode
 
 
 _is_windows = hasattr(sys, 'getwindowsversion')
 
 
 def main():
+    # Hack to handle naked '-' argument
+    bStdIn:bool=False
+    bFile:bool=False
+    for i, arg in enumerate(sys.argv):
+        if sys.argv[i] == '-':
+            sys.argv[i] = '--stdin'
+            bStdIn = True
+
     argp = argparse.ArgumentParser(prog="vtscan")
     argp.add_argument("--verbose", "-v", action='store_true')
-    argp.add_argument("--nogui", "-n", action='store_true')
+    argp.add_argument("--stdin", "-", action='store_true')
+    argp.add_argument("--gui", "-g", action='store_true')
     argp.add_argument("--links", "-L", action='store_true')
+    argp.add_argument("--hash", "-m", action='store_true', help="sha1 or sha256 hash of file to scan")
     argp.add_argument("--browser", "-b", type=str, help="Browser to launch for Virus Total Info or other searches")
-    argp.add_argument("file", type=str, help="File to scan")
+    if not bStdIn:
+        argp.add_argument("file", type=str, help="File to scan")
 
     args = argp.parse_args()
+
+    if bStdIn:
+        if args.hash:
+            raise Exception("Cannot use --hash with stdin")
+    else:
+        if args.hash:
+            args.hash = args.file
+        
 
     api_call_failed : bool = False
     got_results : bool = False
     result_issues : int = -1
     warnings : list = []
 
-    _script_name, _script_path = splitPath(os.path.realpath(__file__))
+    _, _script_path = splitPath(os.path.realpath(__file__))
 
     _qr_png_path = None
-    
-
-    
     
 
     # Check for Api key
@@ -67,81 +110,102 @@ def main():
         argp.print_help()
         exit("\nMissing Virus total API Key. Please set VT_API_KEY environment variable!", 1)
 
-    # Verify that file exists
-    if not os.path.isfile(args.file):
-        argp.print_help()
-        exit("\nPlease specify path to an existing file", 1)
+    if args.stdin:
+        sb = []
+        for line in sys.stdin:
+            sb.append(line)
+        _stdin = "".join(sb)
+        _stdin_bytes = _stdin.encode('utf-8')   
 
-    # Get args.file (first arg)
-    fname, fpath = splitPath(args.file)
+        digest_md5 = hashlib.md5(_stdin_bytes).hexdigest()
+        digest_sha1 = hashlib.sha1(_stdin_bytes).hexdigest()
+        digest_sha256 = hashlib.sha256(_stdin_bytes).hexdigest()
 
-    # Get sha1 checksum of file
-    digest_md5 = getChecksum(args.file, 'md5')
-    digest_sha1 = getChecksum(args.file, 'sha1')
-    digest_sha256 = getChecksum(args.file, 'sha256')
+        fname = "(stdin)"
+        fpath = "-"
+
+    elif args.hash:
+        digest_md5 = "-"
+        digest_sha1 = "-"
+        digest_sha256 = "-"
+        fname = args.hash
+        fpath = "-"
+
+    else:
+        bFile = True
+        # Verify that file exists
+        if not os.path.isfile(args.file):
+            argp.print_help()
+            exit("\nPlease specify path to an existing file", 1)
+
+        # Get args.file (first arg)
+        fname, fpath = splitPath(args.file)
+
+        # Get sha1 checksum of file
+        digest_md5 = getChecksum(args.file, 'md5')
+        digest_sha1 = getChecksum(args.file, 'sha1')
+        digest_sha256 = getChecksum(args.file, 'sha256')
 
     # print("digest_sha256 = " + digest_sha256)
 
-    vt = VirusTotalPublicApi(API_KEY)
+    _verb:str
+    if bFile:
+        _verb = f"File: {args.file}"
+    elif args.stdin:
+        _verb = f"Stdin (sha256 hash: {digest_sha256}))"
+    else:
+        _verb = f"Hash: {args.hash}"
+        
+    
 
-    response = vt.get_file_report(digest_sha256)
+    with vt.Client(API_KEY) as client:
+        if args.hash:
+            _hash = args.hash
+        else:
+            _hash = digest_sha256
 
 
-    if not 'response_code' in response:
-        api_call_failed = True
-        warnings.append("Call to Virus Total API Failed")                    
-        if 'error' in response:
-            err_msg = response['error']
-            if err_msg.find("Max retries exceeded with url") > -1:
-                warnings.append("Please check your network connection")                    
-
-    elif not response['response_code'] == 200:
-        api_call_failed = True
-        warnings.append("Bad general response_code from Virus Total")                    
-
-
-    if not api_call_failed: # Dig into the results...
-        res = response['results']
-
-        if not res['response_code'] == 1:
-            if res['verbose_msg'] == 'The requested resource is not among the finished, queued or pending scans':
-                warnings.append("File not found in VirusTotal database. Therefore its safety is unknown.")
+        try:
+            res  = client.get_object(f"/files/{_hash}")
+        except vt.APIError as ae:
+            if ae.code == 'NotFoundError':
+                warnings.append(f"{_verb} not found in VirusTotal database. Therefore its safety is unknown.")
                 warnings.append("Alternate verifications may be required")
             else:
-                api_call_failed = True
-                warnings.append("Bad result response_code from virus total: {}")
+                warnings.append(f"{_verb} - call failed: {ae}")
 
-        # print("Raw virus total results: {}".format(json.dumps(res, sort_keys=False, indent=4)), 1)
-        
         if len(warnings) == 0:
-            # Lets be paranoid and verify the checksums found
-            if not res['md5'] == digest_md5:
-                warnings.append("MD5 Checksums do not match:\n -    Original: {}\n - Virus Total: {}".format(digest_md5, res['md5']))
-            if not res['sha1'] == digest_sha1:
-                warnings.append("SHA1 Checksums do not match:\n -    Original: {}\n - Virus Total: {}".format(digest_sha1, res['sha1']))
-            if not res['sha256'] == digest_sha256:
-                warnings.append("SHA256 Checksums do not match:\n -    Original: {}\n - Virus Total: {}".format(digest_sha256, res['sha256']))
+            if bFile:
+                # Lets be paranoid and verify the checksums found
+                if not res.md5 == digest_md5:
+                    warnings.append("MD5 Checksums do not match:\n -    Original: {}\n - Virus Total: {}".format(digest_md5, res.sha256))
+                if not res.sha1 == digest_sha1:
+                    warnings.append("SHA1 Checksums do not match:\n -    Original: {}\n - Virus Total: {}".format(digest_sha1, res.sha256))
+                if not res.sha256 == digest_sha256:
+                    warnings.append("SHA256 Checksums do not match:\n -    Original: {}\n - Virus Total: {}".format(digest_sha256, res.sha256))
+            else:
+                digest_md5 = res.md5
+                digest_sha1 = res.sha1
+                digest_sha256 = res.sha256
+
             
             got_results = True
-            result_issues = res['positives']
 
 
-    if api_call_failed or args.verbose:
-        print(".: Raw Virus Total Response :.\n" + json.dumps(response, sort_keys=False, indent=4) + "\n")
-
-
-    print("""
-.: Details :.
-- md5: {0}
-- sha1: {1}
-- sha256: {2}""".format(digest_md5, digest_sha1, digest_sha256) )
-
+    print(f"""
+.: Virus Total :.
+  sha1      : {digest_sha1}
+  sha256    : {digest_sha256}""")
+    
+    permalink:str = None
     if got_results:
-        print("- Permalink: " + res['permalink'])
+        permalink = f"https://www.virustotal.com/gui/file/{digest_sha256}/details"
+        print(f"  Permalink : {permalink}")
 
-        if not args.nogui:
+        if args.gui:
+            ensure_QT()
             # Encoding data using make() function
-            img = qrcode.make(res['permalink'])
+            img = qrcode.make(permalink)
             
             # Get Temp dir (windows only)
             _tmp_dir = None
@@ -162,15 +226,65 @@ def main():
             img.save(_qr_png_path)
 
 
-    print("\n.: File :.\n- File: {0}\n- Path: {1}".format(fname, fpath) )
+    if bFile:
+        print(f"\n.: File :.\n  File : {fname}\n- Path: {fpath}")
 
+    elif args.stdin:
+        print(f"\n.: Stdin :.\n  sha256 : {digest_sha256}")
 
+    else:
+        print(f"\n.: Hash :.\n  Hash arg : {args.hash}")
+
+    total:int=None
     if got_results:
-        print("\n.: Virus Total Summary :.")
-        if result_issues == 0:
-            print("- Detections: 0 out of {} (100% pass)".format(res['total']))
+        harmless = res.last_analysis_stats['harmless']
+        suspicious = res.last_analysis_stats['suspicious']
+        malicious = res.last_analysis_stats['malicious']
+        undetected = res.last_analysis_stats['undetected']
+        detected = malicious + suspicious
+        total = harmless + suspicious + malicious + undetected
+        
+        print("\n.: Details :.")
+        items = []
+        
+        if hasattr(res, 'creation_date'):
+            items.append( ("Creation", res.creation_date) )
         else:
-            print("- Detections: {} out of {} (Go to VirusTotal for more details)".format(result_issues, res['total']))
+            if hasattr(res, 'first_submission_date'):
+                items.append( ("First Submission", res.first_submission_date) )
+
+        if hasattr(res, 'dot_net_assembly'):
+            asy = res.dot_net_assembly
+            items.append( (".Net Name", asy['assembly_name']) )
+            items.append( (".Net CLR Ver", asy['clr_version']) )
+
+        else:
+            items.append( ("Names", res.names[:5]) )
+
+            
+        if hasattr(res, 'signature_info'):
+            sig = res.signature_info
+            items.append( ("Description", sig['description']) )
+            items.append( ("Version", sig['file version']) )
+            if not hasattr(res, 'dot_net_assembly'):
+                items.append( ("Original Name", sig['original name']) )
+            items.append( ("Comments", sig['comments']) )
+
+        items.append( ("Magic", res.magic) )
+
+        items.append( ("Type", res.type) )
+        items.append( ("Size", f"{int(res.size/1024):,}kb") )
+
+        _print_items(items)
+        
+
+        print("\n.: Virus Total Summary :.")
+        if detected == 0:
+            print("   Detections : 0 out of {} (100% pass)".format(total))
+        else:
+            print("   Detections : suspicious: {0} and malicious {1} out of {2} (Go to VirusTotal for more details)".format(suspicious, malicious, total))
+
+        print('~')
 
 
     if len(warnings) > 0:
@@ -206,7 +320,8 @@ def main():
  - https://www.virustotal.com/gui/home/upload""")
 
 
-    if not args.nogui:
+    if args.gui:
+        ensure_QT()
         vtdata = VTData()
         vtdata.fname = fname
         vtdata.fpath = fpath
@@ -216,8 +331,8 @@ def main():
         vtdata.got_results = got_results
         vtdata.result_issues = result_issues
         vtdata.qr_png_path = _qr_png_path
-        vtdata.permalink = res['permalink'] if res and 'permalink' in res else '-'
-        vtdata.total = res['total'] if res and 'total' in res else '-'
+        vtdata.permalink = permalink if permalink else '-'
+        vtdata.total = total if total is not None else '-'
         vtdata.script_path = _script_path
         
         app = MyQtApp(vtdata)
@@ -313,6 +428,14 @@ def Foobar():
     print("HERE")
 
 
+def _print_items(items):
+    iMax:int = 0
+    for k, v in items:
+        if len(k) > iMax:
+            iMax = len(k)
+    for k, v in items:
+        print("  {0:{1}}: {2}".format(k, iMax+1, v))
+        
 
 
 def getChecksum(path, csumtype):
@@ -359,6 +482,9 @@ def toPosixPath(s:str, strip_slash:bool=False, ensure_slash:bool=False):
 
 def getAbsPath(s:str):
     return os.path.abspath( pathlib.Path(s).expanduser() )
+
+def noop(*args, **kwargs):
+    pass
 
 if __name__ == '__main__':
     iExit = 0
