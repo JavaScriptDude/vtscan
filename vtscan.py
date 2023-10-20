@@ -72,13 +72,13 @@ def main():
 
     argp = argparse.ArgumentParser(prog="vtscan")
     argp.add_argument("--verbose", "-v", action='store_true')
-    argp.add_argument("--stdin", "-", action='store_true')
-    argp.add_argument("--gui", "-g", action='store_true')
-    argp.add_argument("--links", "-L", action='store_true')
-    argp.add_argument("--hash", "-m", action='store_true', help="sha1 or sha256 hash of file to scan")
+    argp.add_argument("--stdin", "-", action='store_true', help="Read file from stdin (can use '-' also. Eg %% echo foo.txt | vtscan -)")
+    argp.add_argument("--gui", "-g", action='store_true', help="Launch GUI. Default is CLI")
+    argp.add_argument("--links", "-L", action='store_true', help="Launch links in browser")
+    argp.add_argument("--hash", "-m", action='store_true', help="sha1 or sha256 hash to scan")
     argp.add_argument("--browser", "-b", type=str, help="Browser to launch for Virus Total Info or other searches")
     if not bStdIn:
-        argp.add_argument("file", type=str, help="File to scan")
+        argp.add_argument("file", type=str, help="File to scan or hash (see --hash))")
 
     args = argp.parse_args()
 
