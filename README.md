@@ -27,7 +27,7 @@ positional arguments:
 options:
   -h, --help            show this help message and exit
   --verbose, -v
-  --stdin, -            Read file from stdin (can use '-' also. Eg % echo foo.txt | vtscan -)
+  --stdin, -            Read file from stdin (can use '-' also. Eg % curl https://foo.com/some_installer | vtscan - )
   --gui, -g             Launch GUI. Default is CLI
   --links, -L           Launch links in browser
   --hash, -m            sha1 or sha256 hash to scan
