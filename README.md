@@ -1,19 +1,22 @@
 # vtscan
 VirusTotal File Scanner CLI Tool
 
+VirusTotal is a Free service that keeps track of file scan information for any kind of file on the internet. If they don't have the file registered, you can upload the file to have it scanned by dozens of engines to have it analyzed for issues. VirusTotal gives you a way to confirm the safety of a file downloaded quickly without having to install any anti-virus software on your computer. This is very handy for doing ad-hoc virus scans of individual files downloaded off the internet before running them; like program installers, executables and scripts.
+
 ### Virus Total API Key
 This tool requires that you first get a API Key from Virus Total:
 1. Create a free account on [VirusTotal](https://www.virustotal.com/gui/join-us)
 2. Once verified, log in -> Click on avatar on top right -> API Key
 3. Set the API key to an environment variable called VT_API_KEY
 
-### Requiremnts
+### Requirements
 Python 3.7+
 
 ### Install Dependencies
 ````
 % python3 -m pip install -r requirements.txt
 ````
+
 ### Usage
 ````
 usage: vtscan [-h] [--verbose] [--stdin] [--gui] [--links] [--hash] [--browser BROWSER] file
