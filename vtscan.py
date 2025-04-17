@@ -1,65 +1,39 @@
 from __future__ import print_function
-#########################################
-# .: vtscan :.
-# Verifies a file using VirusTotal API
-# .: install dependencies :.
-# python3 -m pip install -r requirements.txt
-# # for GUI support also run:
-# python3 -m pip install -r requirements_gui.txt
+'''
+ vtscan - VirusTotal Scanner
+ Verifies a file using VirusTotal API
+ Shows virus total results and includes a QR code
+ for easy side channel validation of results
 
-# .: Sample :.
-# export VT_API_KEY=<virus_total_api_key>
-# vtscan <path_to_file>
-# -or-
-# python3 vtscan.py <path_to_file>
+ .: Get free Virus Total API Key :.
+ https://developers.virustotal.com/reference/getting-started
 
-# .: deployment :.
-# # put vtscan.py in a folder on your computer by hand or using git
-# % alias vtscan="python3 <path_to_vtscan_folder>/vtscan.py"
-# .: Other :.
-# Author: Timothy C. Quinn
-# Home: https://github.com/JavaScriptDude/vtscan
-# Licence: https://opensource.org/licenses/MIT
-# .: Todo :.
-# [.] Migrate GUI to PySide6
-# [.] Add new fields to GUI
-# [.] Get Hyperlink working in GUI
-#########################################
+ .: Store local copy of API Key in Env vars :.
+ export VT_API_KEY=<virus_total_api_key>
+
+ .: install dependency :.
+ python3 -m pip install vt-py
+
+ .: Sample :.
+ python3 vtscan.py <path_to_file>
+
+ .: deployment :.
+ Download vtscan.py to a folder on your system
+ % alias vtscan="python3 <path_to_vtscan_folder>/vtscan.py"
+ .: Other :.
+ Author: Timothy C. Quinn
+ Home: https://github.com/JavaScriptDude/vtscan
+ Licence: https://opensource.org/licenses/MIT
+'''
+
 import os
 import sys
-import json
 import hashlib
 import traceback
 import pathlib
 import argparse
-import subprocess
-import shutil
-import tempfile
-import webbrowser
-import pyperclip
 import vt
-from importlib.util import find_spec as import_find_spec
-
-
-# QT Dynamic Imports (on demand)
-def assertModInstalled(mod_name):
-    if import_find_spec(mod_name) is None:
-        raise Exception(f"Module {mod_name} is not installed. Please use pip to install.")
-
-QObject = QQmlApplicationEngine = QApplication = qrcode = None
-def ensure_QT():
-    global QObject, QQmlApplicationEngine, QApplication, qrcode
-    if QObject is None:
-        assertModInstalled('PySide2')
-        assertModInstalled('qrcode')
-        from PySide2.QtCore import QObject
-        from PySide2.QtQml import QQmlApplicationEngine
-        from PySide2.QtWidgets import QApplication
-        import qrcode
-
-
-_is_windows = hasattr(sys, 'getwindowsversion')
-
+import qrcode
 
 def main():
     # Hack to handle naked '-' argument
@@ -72,11 +46,8 @@ def main():
 
     argp = argparse.ArgumentParser(prog="vtscan")
     argp.add_argument("--verbose", "-v", action='store_true')
-    argp.add_argument("--stdin", "-", action='store_true', help="Read file from stdin (can use '-' also. Eg %% echo foo.txt | vtscan -)")
-    argp.add_argument("--gui", "-g", action='store_true', help="Launch GUI. Default is CLI")
-    argp.add_argument("--links", "-L", action='store_true', help="Launch links in browser")
+    argp.add_argument("--stdin", "-", action='store_true', help="Read file from stdin (can use '-' also. Eg %% curl https://foo.com/some_installer | vtscan - )")
     argp.add_argument("--hash", "-m", action='store_true', help="sha1 or sha256 hash to scan")
-    argp.add_argument("--browser", "-b", type=str, help="Browser to launch for Virus Total Info or other searches")
     if not bStdIn:
         argp.add_argument("file", type=str, help="File to scan or hash (see --hash))")
 
@@ -92,13 +63,8 @@ def main():
 
     api_call_failed : bool = False
     got_results : bool = False
-    result_issues : int = -1
     warnings : list = []
 
-    _, _script_path = splitPath(os.path.realpath(__file__))
-
-    _qr_png_path = None
-    
 
     # Check for Api key
     if "VT_API_KEY" not in os.environ:
@@ -192,42 +158,33 @@ def main():
             got_results = True
 
 
+    if bFile:
+        print(f"\n.: File in :.\n  File : {fname}\n  Path : {fpath}")
+
     print(f"""
 .: Virus Total :.
   sha1      : {digest_sha1}
   sha256    : {digest_sha256}""")
+  
     
     permalink:str = None
+    qr:qrcode.QRCode = None
     if got_results:
         permalink = f"https://www.virustotal.com/gui/file/{digest_sha256}/details"
         print(f"  Permalink : {permalink}")
 
-        if args.gui:
-            ensure_QT()
-            # Encoding data using make() function
-            img = qrcode.make(permalink)
-            
-            # Get Temp dir (windows only)
-            _tmp_dir = None
-            if _is_windows:
-                if 'TEMP' not in os.environ:
-                    raise Exception("TEMP Variable does not exist in users environment! cannot continue.")
-                
-                _tmp_dir = API_KEY=os.environ["TEMP"]
-                if not os.path.isdir(_tmp_dir): 
-                    raise Exception(f"TEMP dir does not exist: {_tmp_dir}")
 
-            # Create Temp File name
-            _tf = tempfile.NamedTemporaryFile(suffix='.png', prefix='_qrcode_', dir=_tmp_dir)
-            _qr_png_path = _tf.name
-            _tf.close()
+        qr = qrcode.QRCode(
+            version=1,  # Controls the size of the QR Code (1 is the smallest)
+            error_correction=qrcode.constants.ERROR_CORRECT_L,  # Error correction level
+            box_size=10,  # Size of each box in the QR code grid
+            border=3,  
+        )
 
-            # Saving as an image file
-            img.save(_qr_png_path)
-
-
-    if bFile:
-        print(f"\n.: File :.\n  File : {fname}\n- Path: {fpath}")
+        # Add data to the QR Code
+        qr.add_data(permalink)
+        qr.make(fit=True)
+       
 
     elif args.stdin:
         print(f"\n.: Stdin :.\n  sha256 : {digest_sha256}")
@@ -244,7 +201,7 @@ def main():
         detected = malicious + suspicious
         total = harmless + suspicious + malicious + undetected
         
-        print("\n.: Details :.")
+        print("\n.: VirusTotal Details :.")
         items = []
         
         if hasattr(res, 'creation_date'):
@@ -255,8 +212,8 @@ def main():
 
         if hasattr(res, 'dot_net_assembly'):
             asy = res.dot_net_assembly
-            items.append( (".Net Name", asy['assembly_name']) )
-            items.append( (".Net CLR Ver", asy['clr_version']) )
+            items.append( (".Net Name", getattr(asy, 'assembly_name', '-')) )
+            items.append( (".Net CLR Ver", getattr(asy, 'clr_version', '-')) )
 
         else:
             items.append( ("Names", res.names[:5]) )
@@ -264,11 +221,11 @@ def main():
             
         if hasattr(res, 'signature_info'):
             sig = res.signature_info
-            items.append( ("Description", sig['description']) )
-            items.append( ("Version", sig['file version']) )
+            items.append( ("Description", getattr(sig, 'description', '-')) )
+            items.append( ("Version", getattr(sig, 'file version', '-')) )
             if not hasattr(res, 'dot_net_assembly'):
-                items.append( ("Original Name", sig['original name']) )
-            items.append( ("Comments", sig['comments']) )
+                items.append( ("Original Name", getattr(sig, 'original name', '-')) )
+            items.append( ("Comments", getattr(sig, 'comments', '-')) )
 
         items.append( ("Magic", res.magic) )
 
@@ -284,148 +241,33 @@ def main():
         else:
             print("   Detections : suspicious: {0} and malicious {1} out of {2} (Go to VirusTotal for more details)".format(suspicious, malicious, total))
 
-        print('~')
-
 
     if len(warnings) > 0:
         print("\n.: Warnings :.")
         for warning in warnings:
             print("- {}".format(warning))
 
-    
-
-    if not api_call_failed and args.browser:
-        exe = shutil.which(args.browser)
-        if exe is None:
-            print("\n  Note: Browser not launched executable not found: " + args.browser)
-        else:
-            if not got_results:
-                print("""
-  Signature not found in Virus Total so will search in google
-  and bing for hash signatures. If no results are found,
-  it is strongly recommended to take care with this file.""")
-            else:
-                print("\n  Note: Launching Virus Total in " + args.browser)
-                urls = [res['permalink']]
-
-            for url in urls:
-                cmd = [exe, url]
-                subprocess.Popen(cmd, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
 
     if not api_call_failed and not got_results:
-                print("""
+        print("""
   If this is an installer, executable, or other file that does not contain
   personal information (for example not a zip archive of personal files),
   you may want to consider uploading to VirusTotal to do a deep scan at:
  - https://www.virustotal.com/gui/home/upload""")
 
 
-    if args.gui:
-        ensure_QT()
-        vtdata = VTData()
-        vtdata.fname = fname
-        vtdata.fpath = fpath
-        vtdata.digest_md5 = digest_md5
-        vtdata.digest_sha1 = digest_sha1
-        vtdata.digest_sha256 = digest_sha256
-        vtdata.got_results = got_results
-        vtdata.result_issues = result_issues
-        vtdata.qr_png_path = _qr_png_path
-        vtdata.permalink = permalink if permalink else '-'
-        vtdata.total = total if total is not None else '-'
-        vtdata.script_path = _script_path
+    if got_results:
+        # Generate the QR Code as ASCII art and print to terminal
+        qr.print_ascii()
         
-        app = MyQtApp(vtdata)
-        app.start()
-        
+    print('--- vtscan end ---')
+
+
+
 
 class VTData():
     def __init__(self):
         pass
-
-
-class MyQtApp():
-
-    def __init__(self, vtdata:VTData):
-        self._vtdata = vtdata
-        self._app = QApplication([])
-        self._engine = QQmlApplicationEngine()
-
-        
-
-        _constants = {
-            'Labels': {
-                'Indent': 140
-            }
-        }
-        self._engine.rootContext().setContextProperty("C", _constants)
-        qml = None
-        with open(f'{vtdata.script_path}/vtscan.qml') as f:
-            lines = [ line.strip('\n') for line in list(f) ]
-            qml = str.encode('\n'.join(lines))
-
-        
-        self._engine.loadData(qml)
-        root_obj = self._engine.rootObjects()
-        if not len(root_obj) == 1:
-            raise Exception("Issue Parsing QML. Exiting Program")
-        self._win = root_obj[0]
-
-     
-
-
-        self.setText("txtFile", vtdata.fname)
-        self.setText("txtPath", vtdata.fpath)
-        self.setText("txtMd5", vtdata.digest_md5)
-        self.setText("txtSha1", vtdata.digest_sha1)
-        self.setText("txtSha256", vtdata.digest_sha256)
-        if vtdata.got_results:
-            self.setText("txtLink", f"""<a href="{vtdata.permalink}">VirusTotal.com</a>""")
-            self.setText("txtRes", vtdata.digest_sha256)
-            if vtdata.result_issues == 0:
-                self.setText("txtRes", "Detections: 0 out of {} (100% pass)".format(vtdata.total))
-            else:
-                self.setText("txtRes", "Detections: {} out of {} (Go to VirusTotal for more details)".format(vtdata.result_issues, vtdata.total))
-
-            o = self._win.findChild(QObject, "qrcode")
-            _qr_png_path_c = vtdata.qr_png_path.replace('\\', '/').replace(':', '::') if _is_windows else vtdata.qr_png_path
-            
-            o.setProperty('source', f'file://{_qr_png_path_c}')
-
-            # Link signal in qml to python event
-            self._win.maTxtLink_click.connect(self.maTxtLink_click)
-
-
-            # self._maTxtLink = self._win.findChild(QObject, 'maTxtLink')
-            # self._maTxtLink.clicked.connect(self.maTxtLink_click)
-            # self._maTxtLink.pressed.connect(self.maTxtLink_pressed)
-
-        else:
-            self.setText("txtLink", 'n/a')
-            self.setText("txtRes", "Not Registered in VirusTotal")
-
-
-    def start(self):
-        self._app.exec_()
-
-    def setText(self, name, value):
-            o = self._win.findChild(QObject, name)
-            o.setProperty("text", value)
-
-    def maTxtLink_click(self, right_click):
-        if right_click:
-            self.setText('txtStatusBar', "Permalink copied to clipboard")
-            pyperclip.copy(self._vtdata.permalink)
-        else:
-            webbrowser.open(self._vtdata.permalink)
-
-
-    def maTxtLink_pressed(self):
-        print("HERE")
-
-
-def Foobar():
-    print("HERE")
 
 
 def _print_items(items):
