@@ -79,6 +79,7 @@ options:
                                                
 --- vtscan end ---
 ````
+Note: the QR Code above displays correctly in a terminal window and is scannable.
 
 By Scanning the QR Code on a mobile device, do a side channel validation to VirusTotal enabling you to bypass potential MiTM attacks on VirusTotal data on the target machine's network.
 
